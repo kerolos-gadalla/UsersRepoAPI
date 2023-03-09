@@ -9,6 +9,12 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddDbContext<MyDataContext>(opt => opt.UseInMemoryDatabase("User"));
 builder.Services.AddSingleton<IHasher, BasicHasher>();
+builder.Services.AddSingleton<IJWTService, BasicJWTService>();
+builder.Services.AddAuthentication("jwt").AddJwtBearer("jwt", o =>
+{
+    Console.WriteLine("####### I was here");
+    Console.WriteLine(o);
+});
 
 var app = builder.Build();
 
@@ -28,7 +34,7 @@ var summaries = new[]
 
 app.MapGet("/weatherforecast", () =>
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
+    var forecast = Enumerable.Range(1, 5).Select(index =>
         new WeatherForecast
         (
             DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
@@ -48,19 +54,22 @@ app.MapGet("/hello", () =>
 });
 
 
-app.MapPost("/users", async (User user, MyDataContext db, IHasher hasher) =>
+app.MapPost("/users", async (User user, MyDataContext db, IHasher hasher, IJWTService jWTService) =>
 {
     user.Id = hasher.Hash(user.Email);
     db.Users.Add(user);
     await db.SaveChangesAsync();
 
     var hash = hasher.Hash("email");
-    //Console.WriteLine(user.Email);
-    //Console.WriteLine(hash);
-    return Results.Created($"/save/{user.Id}", user);
+
+    return Results.Created($"/users/{user.Id}", new
+    {
+        id = user.Id,
+        accessToken = jWTService.Issue(user.Email)
+    });
 });
 
-app.MapGet("/users/{id}", async (int id, MyDataContext db) =>
+app.MapGet("/users/{id}", async (string id, MyDataContext db) =>
     await db.Users.FindAsync(id)
         is User student
             ? Results.Ok(student)
@@ -68,8 +77,6 @@ app.MapGet("/users/{id}", async (int id, MyDataContext db) =>
 
 app.MapGet("/users", async (MyDataContext db) =>
     await db.Users.ToListAsync());
-
-
 
 
 app.Run();
